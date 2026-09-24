@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -122,45 +121,41 @@
       min-height: 24px;
     }
   </style>
-
 </head>
 
 <body>
 
   <div class="container">
 
-```
-<h1>Chris Voice</h1>
+    <h1>Chris Voice</h1>
 
-<p>
-  Your private voice brain-dump recorder.
-</p>
+    <p>
+      Your private voice brain-dump recorder.
+    </p>
 
-<button id="driveButton" class="drive-button">
-  Connect Google Drive
-</button>
+    <button id="driveButton" class="drive-button">
+      Connect Google Drive
+    </button>
 
-<div id="driveStatus" class="drive-status">
-  Google Drive not connected.
-</div>
+    <div id="driveStatus" class="drive-status">
+      Google Drive not connected.
+    </div>
 
-<button id="recordButton" class="record-button" disabled>
-  RECORD
-</button>
+    <button id="recordButton" class="record-button" disabled>
+      RECORD
+    </button>
 
-<div id="timer">
-  00:00
-</div>
+    <div id="timer">
+      00:00
+    </div>
 
-<div id="status">
-  Connect Google Drive to begin.
-</div>
-```
+    <div id="status">
+      Connect Google Drive to begin.
+    </div>
 
   </div>
 
   <!-- Google Identity Services -->
-
   <script src="https://accounts.google.com/gsi/client"></script>
 
   <script>
@@ -175,8 +170,11 @@
     const DRIVE_SCOPE =
       "https://www.googleapis.com/auth/drive.file";
 
-    const APP_FOLDER_NAME = "Chris Voice Notes";
-    const INBOX_FOLDER_NAME = "00 - INBOX";
+    // This is the ONLY folder Chris Voice will use.
+    // It is the existing "00 - INBOX" folder in Google Drive.
+
+    const INBOX_FOLDER_ID =
+      "1dqusn42dpSdpDuwaSctrYAt5CQYtI-Vl";
 
 
     // ============================================================
@@ -190,7 +188,8 @@
     let mediaStream = null;
     let audioChunks = [];
 
-    let inboxFolderId = null;
+    let inboxFolderId =
+      INBOX_FOLDER_ID;
 
     let recordingStartTime = null;
     let timerInterval = null;
@@ -249,26 +248,11 @@
             driveButton.textContent =
               "Google Drive Connected";
 
-            recordButton.disabled = false;
+            recordButton.disabled =
+              false;
 
             status.textContent =
-              "Checking your recording folder...";
-
-            try {
-
-              await setupDriveFolders();
-
-              status.textContent =
-                "Ready. Press RECORD.";
-
-            } catch (error) {
-
-              console.error(error);
-
-              status.textContent =
-                "Connected, but couldn't prepare the Drive folder.";
-
-            }
+              "Ready. Press RECORD.";
 
           }
 
@@ -307,10 +291,14 @@
       headers["Authorization"] =
         "Bearer " + accessToken;
 
-      options.headers = headers;
+      options.headers =
+        headers;
 
       const response =
-        await fetch(url, options);
+        await fetch(
+          url,
+          options
+        );
 
       if (!response.ok) {
 
@@ -324,199 +312,6 @@
       }
 
       return response;
-
-    }
-
-
-    // ============================================================
-    // FIND EXISTING DRIVE FOLDER
-    // ============================================================
-
-    async function findFolder(name, parentId = null) {
-
-      let query =
-        "name = '" +
-        name.replace(/'/g, "\\'") +
-        "' " +
-        "and mimeType = 'application/vnd.google-apps.folder' " +
-        "and trashed = false";
-
-      if (parentId) {
-
-        query +=
-          " and '" +
-          parentId +
-          "' in parents";
-
-      }
-
-      const url =
-        "https://www.googleapis.com/drive/v3/files" +
-        "?q=" +
-        encodeURIComponent(query) +
-        "&fields=files(id,name,parents)" +
-        "&pageSize=100";
-
-      const response =
-        await driveRequest(url);
-
-      const data =
-        await response.json();
-
-      if (
-        data.files &&
-        data.files.length > 0
-      ) {
-
-        return data.files[0];
-
-      }
-
-      return null;
-
-    }
-
-
-    // ============================================================
-    // CREATE DRIVE FOLDER
-    // ============================================================
-
-    async function createFolder(name, parentId = null) {
-
-      const metadata = {
-        name: name,
-        mimeType:
-          "application/vnd.google-apps.folder"
-      };
-
-      if (parentId) {
-
-        metadata.parents = [parentId];
-
-      }
-
-      const response =
-        await driveRequest(
-          "https://www.googleapis.com/drive/v3/files",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-
-            body:
-              JSON.stringify(metadata)
-
-          }
-        );
-
-      return await response.json();
-
-    }
-
-
-    // ============================================================
-    // PREPARE DRIVE FOLDERS
-    // ============================================================
-
-    async function setupDriveFolders() {
-
-      // First check whether this browser already knows
-      // which inbox folder belongs to Chris Voice.
-
-      const savedInboxId =
-        localStorage.getItem(
-          "chrisVoiceInboxFolderId"
-        );
-
-      if (savedInboxId) {
-
-        try {
-
-          const response =
-            await driveRequest(
-              "https://www.googleapis.com/drive/v3/files/" +
-              savedInboxId +
-              "?fields=id,name,trashed"
-            );
-
-          const folder =
-            await response.json();
-
-          if (
-            folder.id === savedInboxId &&
-            folder.name === INBOX_FOLDER_NAME &&
-            !folder.trashed
-          ) {
-
-            inboxFolderId =
-              savedInboxId;
-
-            return;
-
-          }
-
-        } catch (error) {
-
-          console.log(
-            "Saved folder could not be reused. Searching again."
-          );
-
-        }
-
-      }
-
-
-      // Look for an existing Chris Voice Notes folder.
-
-      let appFolder =
-        await findFolder(APP_FOLDER_NAME);
-
-
-      // If it doesn't exist, create it.
-
-      if (!appFolder) {
-
-        appFolder =
-          await createFolder(
-            APP_FOLDER_NAME
-          );
-
-      }
-
-
-      // Look for 00 - INBOX inside it.
-
-      let inboxFolder =
-        await findFolder(
-          INBOX_FOLDER_NAME,
-          appFolder.id
-        );
-
-
-      // If it doesn't exist, create it.
-
-      if (!inboxFolder) {
-
-        inboxFolder =
-          await createFolder(
-            INBOX_FOLDER_NAME,
-            appFolder.id
-          );
-
-      }
-
-
-      inboxFolderId =
-        inboxFolder.id;
-
-
-      localStorage.setItem(
-        "chrisVoiceInboxFolderId",
-        inboxFolderId
-      );
 
     }
 
@@ -580,7 +375,8 @@
             MediaRecorder.isTypeSupported(type)
           ) {
 
-            selectedMimeType = type;
+            selectedMimeType =
+              type;
 
             break;
 
@@ -776,15 +572,18 @@
     function updateTimer() {
 
       if (!recordingStartTime) {
+
         return;
+
       }
 
 
       const elapsed =
         Math.floor(
-          (Date.now() -
-            recordingStartTime) /
-          1000
+          (
+            Date.now() -
+            recordingStartTime
+          ) / 1000
         );
 
 
@@ -836,7 +635,7 @@
       if (!inboxFolderId) {
 
         throw new Error(
-          "Drive inbox folder is not ready."
+          "Drive inbox folder is not configured."
         );
 
       }
@@ -870,11 +669,14 @@
         `Voice Note ${timestamp}${extension}`;
 
 
-      // Step 1: start a resumable upload.
+      // ==========================================================
+      // STEP 1: START RESUMABLE UPLOAD
+      // ==========================================================
 
       const metadata = {
 
-        name: filename,
+        name:
+          filename,
 
         parents: [
           inboxFolderId
@@ -891,7 +693,8 @@
           "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
           {
 
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
 
@@ -907,7 +710,9 @@
             },
 
             body:
-              JSON.stringify(metadata)
+              JSON.stringify(
+                metadata
+              )
 
           }
         );
@@ -928,14 +733,17 @@
       }
 
 
-      // Step 2: upload the actual audio.
+      // ==========================================================
+      // STEP 2: UPLOAD ACTUAL AUDIO
+      // ==========================================================
 
       const uploadResponse =
         await fetch(
           uploadUrl,
           {
 
-            method: "PUT",
+            method:
+              "PUT",
 
             headers: {
 
@@ -947,7 +755,8 @@
 
             },
 
-            body: blob
+            body:
+              blob
 
           }
         );
@@ -957,7 +766,6 @@
 
         const errorText =
           await uploadResponse.text();
-
 
         throw new Error(
           `Upload failed ${uploadResponse.status}: ${errorText}`
