@@ -1,1 +1,420 @@
+<!DOCTYPE html>  <html lang="en">  
+<head>  
+  <meta charset="UTF-8">  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+  <meta name="theme-color" content="#111827">  
+  <title>Chris Voice</title>  
+  <style>  
+    * { box-sizing: border-box; }  
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#111827; color:#fff; padding:20px; }  
+    .container { width:100%; max-width:540px; text-align:center; }  
+    h1 { font-size:2.25rem; margin:0 0 8px; }  
+    p { color:#9ca3af; line-height:1.5; }  
+    .muted { color:#9ca3af; font-size:.9rem; }  
+    .panel { background:#1f2937; border:1px solid #374151; border-radius:14px; padding:18px; margin:16px 0; }  
+    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }  
+    button, input, textarea { font:inherit; }  
+    button { border:1px solid #374151; border-radius:10px; padding:12px 16px; background:#1f2937; color:#fff; cursor:pointer; }  
+    button:hover:not(:disabled) { background:#374151; }  
+    button:disabled { opacity:.45; cursor:not-allowed; }  
+    .primary { background:#2563eb; border-color:#2563eb; }  
+    .primary:hover:not(:disabled) { background:#1d4ed8; }  
+    .drive-status { margin-top:10px; font-size:.9rem; color:#9ca3af; min-height:22px; }  
+    .record-button { margin:16px 0 10px; width:190px; height:190px; border-radius:50%; border:none; background:#dc2626; color:#fff; font-size:1.25rem; font-weight:750; box-shadow:0 10px 30px rgba(0,0,0,.35); }  
+    .record-button.recording { background:#7f1d1d; animation:pulse 1.5s infinite; }  
+    .record-button.paused { background:#92400e; animation:none; }  
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(220,38,38,.65)} 70%{box-shadow:0 0 0 22px rgba(220,38,38,0)} 100%{box-shadow:0 0 0 0 rgba(220,38,38,0)} }  
+    #timer { margin:8px 0; font-size:2rem; font-variant-numeric:tabular-nums; letter-spacing:1px; }  
+    #status { margin-top:14px; min-height:24px; color:#e5e7eb; overflow-wrap:anywhere; }  
+    label { display:block; text-align:left; color:#d1d5db; margin:12px 0 6px; font-size:.92rem; }  
+    input, textarea { width:100%; border:1px solid #4b5563; border-radius:8px; background:#111827; color:#fff; padding:11px 12px; }  
+    textarea { min-height:74px; resize:vertical; }  
+    .hidden { display:none !important; }  
+    .checkline { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:10px; color:#d1d5db; font-size:.9rem; }  
+    .checkline input { width:auto; }  
+    .pending-item { text-align:left; padding:12px; border:1px solid #374151; border-radius:10px; margin-top:10px; overflow-wrap:anywhere; }  
+    .pending-item strong { display:block; margin-bottom:4px; }  
+    .small { font-size:.82rem; color:#9ca3af; }  
+    @media(max-width:400px) { .record-button { width:165px;height:165px; } h1{font-size:2rem;} }  
+  </style>  
+</head>  
+<body>  
+  <main class="container">  
+    <h1>Chris Voice</h1>  
+    <p id="intro">Your private voice brain-dump recorder.</p>  <section id="homeView" class="panel">  
+  <p>What are you recording today?</p>  
+  <div class="row">  
+    <button id="personalButton" class="primary">Personal</button>  
+    <button id="multiButton">Multi</button>  
+  </div>  
+  <p class="muted">Personal is for your own thoughts. Multi is for meetings, group discussions and RPG sessions.</p>  
+</section>  
 
+<section id="recorderView" class="hidden">  
+  <div class="row"><button id="backButton">← Choose mode</button></div>  
+  <h2 id="modeTitle">Personal</h2>  
+  <section id="multiFields" class="panel hidden">  
+    <label for="sessionTitle">Session title</label>  
+    <input id="sessionTitle" maxlength="120" placeholder="e.g. Friday D&D session">  
+    <label for="participants">Participant names (optional)</label>  
+    <textarea id="participants" placeholder="Alex, Sam, Jamie..."></textarea>  
+    <p class="small">Names provide context for later processing; they do not guarantee automatic speaker identification.</p>  
+  </section>  
+
+  <button id="driveButton">Connect Google Drive</button>  
+  <div id="driveStatus" class="drive-status">Google Drive not connected.</div>  
+
+  <button id="recordButton" class="record-button" disabled>RECORD</button>  
+  <div id="timer">00:00:00</div>  
+  <div id="status" role="status" aria-live="polite">Connect Google Drive to begin.</div>  
+  <div class="row">  
+    <button id="pauseButton" disabled>Pause</button>  
+    <button id="stopButton" disabled>Stop &amp; save</button>  
+  </div>  
+  <label class="checkline"><input type="checkbox" id="wakeLockToggle" checked> Keep screen awake while recording (if supported)</label>  
+  <p class="small">Audio chunks are saved locally during recording and kept until Drive confirms the upload. Do not clear this site's browser data while a recording is waiting to upload.</p>  
+</section>  
+
+<section id="pendingPanel" class="panel hidden">  
+  <h3>Recordings waiting to upload</h3>  
+  <p class="muted">These recordings are saved in this browser. Connect Drive and retry the upload when you're ready.</p>  
+  <div id="pendingList"></div>  
+</section>
+
+  </main>    <script src="https://accounts.google.com/gsi/client"></script>    <script>  
+    // Keep these values from your existing working recorder.  
+    const CLIENT_ID = "106680748495-5hpkrg09pnon2nu5olce73et8e376emh.apps.googleusercontent.com";  
+    const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";  
+    const INBOX_FOLDER_ID = "1dqusn42dpSdpDuwaSctrYAt5CQYtI-Vl"; // Existing Personal inbox: 00 - INBOX  
+    const MULTI_INBOX_FOLDER_NAME = "0 - INBOX";  
+    const MULTI_INBOX_STORAGE_KEY = "chrisVoiceMultiInboxFolderId";  
+  
+    const $ = id => document.getElementById(id);  
+    const homeView = $('homeView'), recorderView = $('recorderView');  
+    const intro = $('intro'), modeTitle = $('modeTitle'), multiFields = $('multiFields');  
+    const driveButton = $('driveButton'), driveStatus = $('driveStatus');  
+    const recordButton = $('recordButton'), pauseButton = $('pauseButton'), stopButton = $('stopButton');  
+    const timer = $('timer'), statusEl = $('status');  
+    const pendingPanel = $('pendingPanel'), pendingList = $('pendingList');  
+  
+    let currentMode = 'personal';  
+    let accessToken = null, tokenExpiresAt = 0, tokenClient = null, pendingTokenResolve = null, pendingTokenReject = null;  
+    let recorder = null, mediaStream = null, wakeLock = null;  
+    let currentRecordingId = null, chunkIndex = 0, chunkWrites = [];  
+    let timerInterval = null, recordingStartedAt = 0, elapsedBeforeCurrentRun = 0, isFinalizing = false, isRequestingMic = false;  
+    let dbPromise;  
+  
+    function openDB() {  
+      if (dbPromise) return dbPromise;  
+      dbPromise = new Promise((resolve, reject) => {  
+        const request = indexedDB.open('ChrisVoiceRecovery', 1);  
+        request.onupgradeneeded = () => {  
+          const db = request.result;  
+          if (!db.objectStoreNames.contains('recordings')) db.createObjectStore('recordings', { keyPath: 'id' });  
+          if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks', { keyPath: 'key' });  
+        };  
+        request.onsuccess = () => resolve(request.result);  
+        request.onerror = () => reject(request.error);  
+      });  
+      return dbPromise;  
+    }  
+    async function dbPut(storeName, value) {  
+      const db = await openDB();  
+      return new Promise((resolve, reject) => {  
+        const tx = db.transaction(storeName, 'readwrite');  
+        tx.objectStore(storeName).put(value);  
+        tx.oncomplete = () => resolve();  
+        tx.onerror = () => reject(tx.error);  
+        tx.onabort = () => reject(tx.error || new Error('Local save was interrupted.'));  
+      });  
+    }  
+    async function dbGetAll(storeName) {  
+      const db = await openDB();  
+      return new Promise((resolve, reject) => {  
+        const tx = db.transaction(storeName, 'readonly');  
+        const req = tx.objectStore(storeName).getAll();  
+        req.onsuccess = () => resolve(req.result || []);  
+        req.onerror = () => reject(req.error);  
+      });  
+    }  
+    async function dbDelete(storeName, key) {  
+      const db = await openDB();  
+      return new Promise((resolve, reject) => {  
+        const tx = db.transaction(storeName, 'readwrite');  
+        tx.objectStore(storeName).delete(key);  
+        tx.oncomplete = () => resolve();  
+        tx.onerror = () => reject(tx.error);  
+      });  
+    }  
+    async function deleteRecordingData(id) {  
+      const allChunks = await dbGetAll('chunks');  
+      const db = await openDB();  
+      return new Promise((resolve, reject) => {  
+        const tx = db.transaction(['chunks','recordings'], 'readwrite');  
+        const chunkStore = tx.objectStore('chunks');  
+        allChunks.filter(c => c.recordingId === id).forEach(c => chunkStore.delete(c.key));  
+        tx.objectStore('recordings').delete(id);  
+        tx.oncomplete = () => resolve();  
+        tx.onerror = () => reject(tx.error);  
+      });  
+    }  
+  
+    function setStatus(message) { statusEl.textContent = message; }  
+    function showMode(mode) {  
+      currentMode = mode;  
+      homeView.classList.add('hidden'); recorderView.classList.remove('hidden');  
+      const isMulti = mode === 'multi';  
+      modeTitle.textContent = isMulti ? 'Multi' : 'Personal';  
+      intro.textContent = isMulti ? 'Record a meeting, conversation or RPG session.' : 'Your private voice brain-dump recorder.';  
+      multiFields.classList.toggle('hidden', !isMulti);  
+      setStatus(accessToken ? 'Ready. Press RECORD.' : 'Connect Google Drive to begin.');  
+    }  
+    $('personalButton').addEventListener('click', () => showMode('personal'));  
+    $('multiButton').addEventListener('click', () => showMode('multi'));  
+    $('backButton').addEventListener('click', () => {  
+      if (recorder && recorder.state !== 'inactive') return;  
+      recorderView.classList.add('hidden'); homeView.classList.remove('hidden');  
+      intro.textContent = 'Your private voice brain-dump recorder.';  
+    });  
+  
+    window.addEventListener('load', async () => {  
+      if (window.google?.accounts?.oauth2) {  
+        tokenClient = google.accounts.oauth2.initTokenClient({  
+          client_id: CLIENT_ID,  
+          scope: DRIVE_SCOPE,  
+          callback: response => {  
+            if (response.error) {  
+              const error = new Error(response.error_description || response.error || 'Google authorization failed.');  
+              if (pendingTokenReject) pendingTokenReject(error);  
+              pendingTokenResolve = pendingTokenReject = null;  
+              driveStatus.textContent = 'Google Drive connection failed.';  
+              return;  
+            }  
+            accessToken = response.access_token;  
+            tokenExpiresAt = Date.now() + (Number(response.expires_in || 3600) * 1000);  
+            driveStatus.textContent = 'Connected to Google Drive.';  
+            driveButton.textContent = 'Google Drive Connected';  
+            recordButton.disabled = false;  
+            setStatus('Ready. Press RECORD.');  
+            if (pendingTokenResolve) pendingTokenResolve(accessToken);  
+            pendingTokenResolve = pendingTokenReject = null;  
+            renderPending();  
+          }  
+        });  
+      } else {  
+        driveStatus.textContent = 'Google authentication did not load. Check your connection and reload.';  
+      }  
+      try { await renderPending(); } catch (e) { console.error(e); }  
+    });  
+  
+    function requestToken(prompt) {  
+      if (!tokenClient) return Promise.reject(new Error('Google authentication is not ready.'));  
+      return new Promise((resolve, reject) => {  
+        pendingTokenResolve = resolve; pendingTokenReject = reject;  
+        try { tokenClient.requestAccessToken({ prompt: prompt || '' }); }  
+        catch (e) { pendingTokenResolve = pendingTokenReject = null; reject(e); }  
+      });  
+    }  
+    driveButton.addEventListener('click', async () => {  
+      try { await requestToken(accessToken ? '' : 'consent'); }  
+      catch (e) { console.error(e); driveStatus.textContent = 'Could not connect to Google Drive. Please try again.'; }  
+    });  
+    async function ensureToken(force = false) {  
+      if (!force && accessToken && Date.now() < tokenExpiresAt - 60000) return accessToken;  
+      return requestToken(accessToken ? '' : 'consent');  
+    }  
+    async function driveFetch(url, options = {}, retry = true) {  
+      await ensureToken();  
+      const headers = new Headers(options.headers || {});  
+      headers.set('Authorization', 'Bearer ' + accessToken);  
+      const response = await fetch(url, { ...options, headers });  
+      if (response.status === 401 && retry) {  
+        await ensureToken(true);  
+        return driveFetch(url, options, false);  
+      }  
+      if (!response.ok) throw new Error(`Google Drive error ${response.status}: ${await response.text()}`);  
+      return response;  
+    }  
+  
+    async function acquireWakeLock() {  
+      if (!$('wakeLockToggle').checked || !('wakeLock' in navigator)) return;  
+      try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }  
+      catch (e) { console.warn('Screen wake lock unavailable:', e); }  
+    }  
+    async function releaseWakeLock() { if (wakeLock) { try { await wakeLock.release(); } catch (_) {} wakeLock = null; } }  
+    document.addEventListener('visibilitychange', async () => {  
+      if (document.visibilityState === 'visible' && recorder && recorder.state === 'recording') await acquireWakeLock();  
+    });  
+  
+    recordButton.addEventListener('click', async () => {  
+      if (isRequestingMic || isFinalizing) return;  
+      if (!recorder || recorder.state === 'inactive') await startRecording();  
+      else if (recorder.state === 'recording') pauseRecording();  
+      else if (recorder.state === 'paused') resumeRecording();  
+    });  
+    pauseButton.addEventListener('click', () => {  
+      if (!recorder) return;  
+      if (recorder.state === 'recording') pauseRecording();  
+      else if (recorder.state === 'paused') resumeRecording();  
+    });  
+    stopButton.addEventListener('click', stopRecording);  
+  
+    async function startRecording() {  
+      if (!accessToken) { setStatus('Connect Google Drive before recording.'); return; }  
+      isRequestingMic = true; recordButton.disabled = true;  
+      try {  
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });  
+        const types = ['audio/webm;codecs=opus','audio/webm','audio/mp4'];  
+        const mimeType = types.find(t => MediaRecorder.isTypeSupported(t));  
+        if (!mimeType) throw new Error('This browser does not support a compatible audio format.');  
+        currentRecordingId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2));  
+        chunkIndex = 0; chunkWrites = []; elapsedBeforeCurrentRun = 0; recordingStartedAt = 0;  
+        const isMulti = currentMode === 'multi';  
+        const title = isMulti ? ($('sessionTitle').value.trim() || 'Multi Session') : 'Personal Voice Note';  
+        const participants = isMulti ? $('participants').value.trim() : '';  
+        await dbPut('recordings', { id: currentRecordingId, mode: currentMode, title, participants, createdAt: new Date().toISOString(), mimeType, state: 'recording', elapsedSeconds: 0 });  
+        recorder = new MediaRecorder(mediaStream, { mimeType });  
+        recorder.ondataavailable = event => {  
+          if (event.data && event.data.size > 0) {  
+            const index = chunkIndex++;  
+            const write = dbPut('chunks', { key: currentRecordingId + ':' + index, recordingId: currentRecordingId, index, blob: event.data });  
+            chunkWrites.push(write);  
+            write.catch(err => { console.error(err); setStatus('Warning: a local audio chunk could not be saved. Stop and check storage.'); });  
+          }  
+        };  
+        recorder.onerror = event => { console.error(event.error || event); setStatus('Recording error. Stop when safe and check the saved recovery data.'); };  
+        recorder.onstart = async () => {  
+          recordButton.textContent = 'PAUSE'; recordButton.classList.add('recording');  
+          pauseButton.disabled = false; stopButton.disabled = false;  
+          setStatus('Recording. Audio is being saved locally in chunks.');  
+          recordingStartedAt = Date.now(); startTimer(); await acquireWakeLock();  
+        };  
+        recorder.onpause = () => {  
+          elapsedBeforeCurrentRun += Date.now() - recordingStartedAt; recordingStartedAt = 0; updateTimer();  
+          recordButton.textContent = 'RESUME'; recordButton.classList.remove('recording'); recordButton.classList.add('paused');  
+          pauseButton.textContent = 'Resume'; setStatus('Paused. Your audio chunks remain saved locally.');  
+        };  
+        recorder.onresume = async () => {  
+          recordingStartedAt = Date.now(); recordButton.textContent = 'PAUSE'; recordButton.classList.remove('paused'); recordButton.classList.add('recording');  
+          pauseButton.textContent = 'Pause'; setStatus('Recording.'); await acquireWakeLock();  
+        };  
+        recorder.onstop = finalizeRecording;  
+        recorder.start(10000);  
+        stopButton.disabled = false;  
+      } catch (error) {  
+        console.error(error);  
+        if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());  
+        mediaStream = null;  
+        setStatus('Could not start recording: ' + (error.message || 'Check microphone permission and browser support.'));  
+        recordButton.disabled = !accessToken;  
+      } finally { isRequestingMic = false; }  
+    }  
+    function pauseRecording() { if (recorder && recorder.state === 'recording') recorder.pause(); }  
+    function resumeRecording() { if (recorder && recorder.state === 'paused') recorder.resume(); }  
+    function stopRecording() {  
+      if (recorder && recorder.state !== 'inactive') {  
+        stopButton.disabled = true; pauseButton.disabled = true; setStatus('Finishing recording and saving the last audio chunk…'); recorder.stop();  
+      }  
+    }  
+    function startTimer() { if (timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateTimer, 250); updateTimer(); }  
+    function elapsedMilliseconds() { return elapsedBeforeCurrentRun + (recordingStartedAt ? Date.now() - recordingStartedAt : 0); }  
+    function updateTimer() {  
+      const total = Math.floor(elapsedMilliseconds() / 1000);  
+      const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;  
+      timer.textContent = [h,m,s].map(n => String(n).padStart(2,'0')).join(':');  
+    }  
+    function stopTimer() { if (timerInterval) clearInterval(timerInterval); timerInterval = null; updateTimer(); }  
+  
+    async function finalizeRecording() {  
+      if (isFinalizing) return;  
+      isFinalizing = true; stopTimer(); await releaseWakeLock();  
+      if (mediaStream) mediaStream.getTracks().forEach(track => track.stop()); mediaStream = null;  
+      recordButton.disabled = true; pauseButton.disabled = true; stopButton.disabled = true;  
+      try {  
+        await Promise.all(chunkWrites);  
+        const records = await dbGetAll('recordings');  
+        const meta = records.find(r => r.id === currentRecordingId);  
+        const allChunks = (await dbGetAll('chunks')).filter(c => c.recordingId === currentRecordingId).sort((a,b) => a.index-b.index);  
+        if (!meta || !allChunks.length) throw new Error('No saved audio chunks were found. The recording has been kept for inspection if possible.');  
+        meta.state = 'ready'; meta.elapsedSeconds = Math.round(elapsedMilliseconds()/1000); meta.chunkCount = allChunks.length;  
+        await dbPut('recordings', meta);  
+        setStatus('Recording saved locally. Preparing upload…');  
+        const blob = new Blob(allChunks.map(c => c.blob), { type: meta.mimeType });  
+        if (!blob.size) throw new Error('The recording file is empty. It has not been uploaded.');  
+        await uploadBlob(blob, meta);  
+        await deleteRecordingData(meta.id);  
+        setStatus('Uploaded and confirmed in Google Drive. Ready for another recording.');  
+        await renderPending();  
+      } catch (error) {  
+        console.error(error);  
+        setStatus('Upload did not finish. Your local recovery copy has been kept. ' + (error.message || 'Connect Drive and retry.'));  
+        await renderPending();  
+      } finally {  
+        recordButton.textContent = 'RECORD'; recordButton.classList.remove('recording','paused');  
+        recordButton.disabled = !accessToken; pauseButton.textContent = 'Pause';  
+        currentRecordingId = null; recorder = null; chunkWrites = []; isFinalizing = false;  
+      }  
+    }  
+  
+    async function getMultiInboxFolderId() {  
+      const savedId = localStorage.getItem(MULTI_INBOX_STORAGE_KEY);  
+      if (savedId) return savedId;  
+  
+      // Create the dedicated Multi inbox in Drive the first time a Multi recording is uploaded.  
+      const response = await driveFetch('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },  
+        body: JSON.stringify({ name: MULTI_INBOX_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })  
+      });  
+      const folder = await response.json();  
+      if (!folder || !folder.id) throw new Error('Google Drive did not confirm creation of the 0 - INBOX folder. Your recording is still saved locally.');  
+      localStorage.setItem(MULTI_INBOX_STORAGE_KEY, folder.id);  
+      return folder.id;  
+    }  
+  
+    async function uploadBlob(blob, meta) {  
+      const stamp = new Date(meta.createdAt || Date.now()).toISOString().replace(/:/g,'-').replace(/\.\d{3}Z$/,'Z');  
+      const safeTitle = (meta.title || (meta.mode === 'multi' ? 'Multi Session' : 'Voice Note')).replace(/[\\/:*?"<>|]/g,'-').trim().slice(0,80) || 'Voice Note';  
+      const ext = blob.type.includes('mp4') ? '.m4a' : '.webm';  
+      const filename = `${safeTitle} ${stamp}${ext}`;  
+      const destinationFolderId = meta.mode === 'multi' ? await getMultiInboxFolderId() : INBOX_FOLDER_ID;  
+      const metadata = { name: filename, parents: [destinationFolderId], mimeType: blob.type, description: `Mode: ${meta.mode}; Duration: ${meta.elapsedSeconds || 0} seconds${meta.participants ? '; Participants: ' + meta.participants : ''}` };  
+      const startResponse = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {  
+        method:'POST', headers:{'Content-Type':'application/json; charset=UTF-8','X-Upload-Content-Type':blob.type,'X-Upload-Content-Length':String(blob.size)}, body:JSON.stringify(metadata)  
+      });  
+      const uploadUrl = startResponse.headers.get('Location');  
+      if (!uploadUrl) throw new Error('Google Drive did not return a resumable upload URL.');  
+      const uploadResponse = await fetch(uploadUrl, { method:'PUT', headers:{'Content-Type':blob.type}, body:blob });  
+      if (!uploadResponse.ok) throw new Error(`Audio upload failed (${uploadResponse.status}): ${await uploadResponse.text()}`);  
+      const savedFile = await uploadResponse.json().catch(() => null);  
+      if (!savedFile || !savedFile.id) throw new Error('Drive upload response did not include a file ID; local recovery copy has been kept.');  
+      console.log('Drive upload confirmed:', savedFile.id, filename);  
+    }  
+  
+    async function renderPending() {  
+      const records = (await dbGetAll('recordings')).filter(r => r.state !== 'uploaded').sort((a,b) => new Date(a.createdAt)-new Date(b.createdAt));  
+      pendingList.replaceChildren();  
+      pendingPanel.classList.toggle('hidden', records.length === 0);  
+      for (const meta of records) {  
+        const item = document.createElement('div'); item.className = 'pending-item';  
+        const heading = document.createElement('strong'); heading.textContent = `${meta.title || 'Voice recording'} (${meta.mode || 'personal'})`;  
+        const detail = document.createElement('div'); detail.className = 'small';  
+        detail.textContent = `${new Date(meta.createdAt).toLocaleString()} · ${meta.state === 'recording' ? 'Possibly interrupted recording' : 'Saved locally, awaiting upload'}`;  
+        const button = document.createElement('button'); button.textContent = 'Recover / upload'; button.disabled = !accessToken;  
+        button.addEventListener('click', async () => {  
+          button.disabled = true; setStatus('Recovering local recording…');  
+          try {  
+            const chunks = (await dbGetAll('chunks')).filter(c => c.recordingId === meta.id).sort((a,b) => a.index-b.index);  
+            if (!chunks.length) throw new Error('No saved audio chunks were found for this recording.');  
+            const blob = new Blob(chunks.map(c => c.blob), { type:meta.mimeType || chunks[0].blob.type || 'audio/webm' });  
+            if (!blob.size) throw new Error('The recovered audio is empty.');  
+            meta.state = 'ready'; meta.chunkCount = chunks.length; await dbPut('recordings', meta);  
+            await uploadBlob(blob, meta); await deleteRecordingData(meta.id);  
+            setStatus('Recovered recording uploaded successfully.'); await renderPending();  
+          } catch (e) { console.error(e); setStatus('Recovery upload failed; local data is still kept. ' + (e.message || '')); button.disabled = !accessToken; }  
+        });  
+        item.append(heading, detail, button); pendingList.append(item);  
+      }  
+    }  
+  </script>  </body>  
+</html>
